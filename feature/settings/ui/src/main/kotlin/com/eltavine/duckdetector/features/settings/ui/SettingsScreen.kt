@@ -21,10 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -47,6 +45,7 @@ import com.eltavine.duckdetector.features.settings.ui.licenses.OpenSourceLicense
 import com.eltavine.duckdetector.features.settings.ui.licenses.OpenSourceLicensesScreen
 import com.eltavine.duckdetector.features.settings.ui.components.AboutCard
 import com.eltavine.duckdetector.features.settings.ui.components.AuthorCard
+import com.eltavine.duckdetector.features.settings.ui.components.ContributorNameWordmark
 import com.eltavine.duckdetector.features.settings.ui.components.ConsentSettingCard
 import com.eltavine.duckdetector.features.settings.presentation.model.SettingsUiState
 
@@ -114,8 +113,7 @@ fun SettingsScreen(
                 )
 
                 AuthorCard()
-
-                Spacer(modifier = Modifier.height(72.dp))
+                ContributorNameWordmark()
             }
         }
     }
