@@ -69,6 +69,11 @@ import com.eltavine.duckdetector.core.ui.R
 import com.eltavine.duckdetector.core.ui.presentation.StatusAppearance
 import com.eltavine.duckdetector.core.ui.presentation.rememberStatusAppearance
 
+/**
+ * A detector's card. Collapsed, it shows only what a reader scanning the dashboard needs: the
+ * detector, its status and the verdict. Expanding it adds the [subtitle] describing what was
+ * checked, the [headerFacts], the [summary], the [content] and the [footerActions].
+ */
 @Composable
 public fun DetectorCardFrame(
     title: String,
@@ -178,15 +183,6 @@ public fun DetectorCardFrame(
                 )
             }
 
-            if (subtitle.isNotBlank()) {
-                WrapSafeText(
-                    text = subtitle,
-                    modifier = Modifier.fillMaxWidth(),
-                    style = DuckTypography.Footnote,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
             WrapSafeText(
                 text = verdict,
                 modifier = Modifier.fillMaxWidth(),
@@ -194,8 +190,6 @@ public fun DetectorCardFrame(
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
-
-        headerFacts()
 
         AnimatedVisibility(
             visible = isExpanded,
@@ -209,6 +203,15 @@ public fun DetectorCardFrame(
             ) + fadeOut(MotionTokens.FadeInOut),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (subtitle.isNotBlank()) {
+                    WrapSafeText(
+                        text = subtitle,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = DuckTypography.Footnote,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                headerFacts()
                 if (summary.isNotBlank()) {
                     WrapSafeText(
                         text = summary,
@@ -218,14 +221,13 @@ public fun DetectorCardFrame(
                     )
                 }
                 content()
+                footerActions()
             }
         }
 
         if (!isExpanded) {
             collapsedOverview()
         }
-
-        footerActions()
     }
 }
 

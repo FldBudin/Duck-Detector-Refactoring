@@ -24,7 +24,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -35,7 +34,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import com.eltavine.duckdetector.BuildConfig
 import com.eltavine.duckdetector.notifications.ScanNotificationPermissions
 import com.eltavine.duckdetector.notifications.preferences.ScanNotificationConsentStore
 import com.eltavine.duckdetector.notifications.preferences.ScanNotificationPrefs
@@ -49,11 +47,8 @@ import com.eltavine.duckdetector.startup.legal.AgreementScreen
 import com.eltavine.duckdetector.core.detector.ConsentDecision
 import com.eltavine.duckdetector.core.detector.ConsentId
 import com.eltavine.duckdetector.core.ui.components.AlphaBuildBanner
-import com.eltavine.duckdetector.core.ui.components.AlphaBuildWarningOverlay
 import com.eltavine.duckdetector.core.ui.components.ScreenshotWatermarkOverlay
 import com.eltavine.duckdetector.ui.shell.AppDestination
-import com.eltavine.duckdetector.ui.shell.ScreenCaptureNoticeDialog
-import com.eltavine.duckdetector.ui.shell.ScreenCaptureNoticeEffect
 import com.eltavine.duckdetector.ui.shell.StartupPolicyScreen
 import com.eltavine.duckdetector.ui.shell.combineConsentDecisions
 import com.eltavine.duckdetector.ui.shell.resolveStartupGateState
@@ -166,12 +161,7 @@ fun DuckDetectorApp() {
         )
     }
     val startupPoliciesReady = shouldCreateDetectorViewModels(gateState)
-    val requiresAlphaAcknowledgement = BuildConfig.isAlphaVersion
-    var alphaAcknowledged by rememberSaveable(BuildConfig.VERSION_NAME) {
-        mutableStateOf(false)
-    }
     var destination by rememberSaveable { mutableStateOf(AppDestination.MAIN) }
-    var screenCaptureNoticeEventId by remember { mutableLongStateOf(0L) }
     val scope = rememberCoroutineScope()
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -204,12 +194,6 @@ fun DuckDetectorApp() {
 
     Surface {
         Box(modifier = Modifier.fillMaxSize()) {
-            ScreenCaptureNoticeEffect(
-                onScreenCaptured = {
-                    screenCaptureNoticeEventId += 1L
-                },
-            )
-
             when {
                 agreementPrefs == null -> {
                     StartupBootstrapLoadingScreen(modifier = Modifier.fillMaxSize())
@@ -232,8 +216,6 @@ fun DuckDetectorApp() {
                         onSelectDestination = { selected -> destination = selected },
                         consentDecisions = requireNotNull(consentDecisions),
                         notificationPermissionState = notificationPermissionState,
-                        canShowUpdateDialog = (!requiresAlphaAcknowledgement || alphaAcknowledged) &&
-                                screenCaptureNoticeEventId == 0L,
                     )
                 }
 
@@ -298,24 +280,6 @@ fun DuckDetectorApp() {
 
             if (agreementAccepted && startupPoliciesReady) {
                 AlphaBuildBanner()
-            }
-
-            AlphaBuildWarningOverlay(
-                forceVisible = agreementAccepted &&
-                        requiresAlphaAcknowledgement &&
-                        !alphaAcknowledged,
-                onDismissed = {
-                    alphaAcknowledged = true
-                },
-            )
-
-            if (screenCaptureNoticeEventId > 0L) {
-                ScreenCaptureNoticeDialog(
-                    noticeInstanceKey = screenCaptureNoticeEventId,
-                    onDismiss = {
-                        screenCaptureNoticeEventId = 0L
-                    },
-                )
             }
         }
     }
