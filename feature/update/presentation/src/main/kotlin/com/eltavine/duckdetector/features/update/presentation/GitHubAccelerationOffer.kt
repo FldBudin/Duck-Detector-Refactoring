@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
-package com.eltavine.duckdetector.features.update.data
+package com.eltavine.duckdetector.features.update.presentation
 
-import android.content.Context
-import com.eltavine.duckdetector.features.update.domain.NightlyUpdateChecker
-import kotlinx.coroutines.flow.first
+import com.eltavine.duckdetector.features.update.domain.GitHubAcceleration
+import java.util.Locale
 
-fun createNightlyUpdateChecker(appContext: Context): NightlyUpdateChecker {
-    val accelerationStore = GitHubAccelerationStore.getInstance(appContext)
-    return UpdateRepository(
-        cache = UpdateCacheStore.getInstance(appContext),
-        currentRoute = { GitHubRoute.of(accelerationStore.acceleration.first()) },
-    )
-}
+/**
+ * The offer goes to users who read the app in Chinese, in any script or region, and have not chosen
+ * yet. The language only hints at a network where GitHub is hard to reach, so the user is asked
+ * rather than switched over.
+ */
+fun shouldOfferGitHubAcceleration(acceleration: GitHubAcceleration, appLocale: Locale): Boolean =
+    acceleration == GitHubAcceleration.UNDECIDED && appLocale.language == Locale.CHINESE.language

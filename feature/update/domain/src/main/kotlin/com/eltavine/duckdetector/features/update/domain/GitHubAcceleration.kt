@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
-package com.eltavine.duckdetector.features.update.data
+package com.eltavine.duckdetector.features.update.domain
 
-import android.content.Context
-import com.eltavine.duckdetector.features.update.domain.NightlyUpdateChecker
-import kotlinx.coroutines.flow.first
-
-fun createNightlyUpdateChecker(appContext: Context): NightlyUpdateChecker {
-    val accelerationStore = GitHubAccelerationStore.getInstance(appContext)
-    return UpdateRepository(
-        cache = UpdateCacheStore.getInstance(appContext),
-        currentRoute = { GitHubRoute.of(accelerationStore.acceleration.first()) },
-    )
+/**
+ * Whether update checks and Nightly downloads reach GitHub through the gh-proxy.com acceleration
+ * service. It stays [UNDECIDED] until the user chooses, and undecided requests go to GitHub directly.
+ */
+enum class GitHubAcceleration {
+    UNDECIDED,
+    ENABLED,
+    DISABLED,
 }
