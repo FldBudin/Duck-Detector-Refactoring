@@ -112,7 +112,10 @@ namespace duckdetector::selinux {
         }
     }
 
-    ContextValidityProbeSnapshot collect_context_validity_snapshot(JNIEnv *env) {
+    ContextValidityProbeSnapshot collect_context_validity_snapshot(
+            JNIEnv *env,
+            const bool allow_access_checks
+    ) {
         ContextValidityProbeSnapshot snapshot;
         snapshot.query_method = kQueryMethod;
         trace_step("selinux native: selinux state");
@@ -158,13 +161,15 @@ namespace duckdetector::selinux {
             snapshot.proc_self_context_matches_current = (*proc_self_context == carrier_context);
         }
         trace_step("selinux native: dyntransition access check");
-        snapshot.dyntransition_check_passed = check_access_rule(
-                symbols,
-                kExpectedCarrierPrefix,
-                kIsolatedAppContext,
-                kProcessClass,
-                kDyntransitionPermission
-        );
+        if (allow_access_checks) {
+            snapshot.dyntransition_check_passed = check_access_rule(
+                    symbols,
+                    kExpectedCarrierPrefix,
+                    kIsolatedAppContext,
+                    kProcessClass,
+                    kDyntransitionPermission
+            );
+        }
         trace_step("selinux native: dirty policy access checks");
         snapshot.dirty_policy = collect_dirty_policy_snapshot(
                 symbols,
@@ -172,7 +177,8 @@ namespace duckdetector::selinux {
                 java_access,
                 carrier_context,
                 snapshot.carrier_matches_expected,
-                snapshot.dyntransition_check_passed
+                snapshot.dyntransition_check_passed,
+                allow_access_checks
         );
 
         if (!snapshot.carrier_matches_expected ||
