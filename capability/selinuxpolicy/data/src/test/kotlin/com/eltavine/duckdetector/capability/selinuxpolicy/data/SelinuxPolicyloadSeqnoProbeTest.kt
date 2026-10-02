@@ -100,10 +100,8 @@ class SelinuxPolicyloadSeqnoProbeTest {
     fun `a status page that killed the child is a finding and never queries in process`() {
         var accessQueries = 0
         val result = probe.inspect(
-            statusPage = SelinuxStatusPageResult(
-                state = SelinuxStatusPageState.HOSTILE,
-                attempted = true,
-                terminatingSignal = 9,
+            statusPage = SelinuxStatusPageResult.Faulted(
+                signal = 9,
                 notes = listOf("Child was killed by SIGKILL on the first read of the mapping."),
             ),
             queryAccess = {
@@ -124,18 +122,19 @@ class SelinuxPolicyloadSeqnoProbeTest {
     @Test
     fun `an unread status page is unavailable with the probe's reason`() {
         var accessQueries = 0
-        val unknown = SelinuxStatusPageResult(
-            state = SelinuxStatusPageState.INCONCLUSIVE,
+        val unknown = SelinuxStatusPageResult.Inconclusive(
+            reason = "Status page child did not finish within 1000 ms and was stopped.",
             attempted = true,
-            failureReason = "Status page child did not finish within 1000 ms and was stopped.",
         )
-        val unmappable = SelinuxStatusPageResult(
-            state = SelinuxStatusPageState.UNAVAILABLE,
-            attempted = true,
-            failureReason = "open of /sys/fs/selinux/status failed (errno=13).",
+        val notForked = SelinuxStatusPageResult.Inconclusive(
+            reason = "Status page child could not be started (errno=11); status page probe not run.",
+            attempted = false,
+        )
+        val unmappable = SelinuxStatusPageResult.Unavailable(
+            reason = "open of /sys/fs/selinux/status failed (errno=13).",
         )
 
-        val results = listOf(unknown, unmappable).map { statusPage ->
+        val results = listOf(unknown, notForked, unmappable).map { statusPage ->
             probe.inspect(statusPage) {
                 accessQueries += 1
                 access(seqno = 9)
@@ -144,18 +143,14 @@ class SelinuxPolicyloadSeqnoProbeTest {
 
         assertEquals(0, accessQueries)
         results.forEach { assertEquals(SelinuxPolicyloadSeqnoState.UNAVAILABLE, it.state) }
-        assertEquals(unknown.failureReason, results[0].failureReason)
-        assertEquals(unmappable.failureReason, results[1].failureReason)
+        assertEquals(listOf(unknown.reason, notForked.reason, unmappable.reason), results.map { it.failureReason })
+        assertEquals(listOf(true, false, true), results.map { it.probeAttempted })
     }
 
     @Test
     fun `an intact status page is compared from the header the child read`() {
         val result = probe.inspect(
-            statusPage = SelinuxStatusPageResult(
-                state = SelinuxStatusPageState.INTACT,
-                attempted = true,
-                header = status(sequence = 12, policyload = 9),
-            ),
+            statusPage = SelinuxStatusPageResult.Intact(header = status(sequence = 12, policyload = 9)),
             queryAccess = { access(seqno = 9) },
         )
 

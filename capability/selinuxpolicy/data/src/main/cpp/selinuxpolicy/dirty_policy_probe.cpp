@@ -54,11 +54,6 @@ namespace duckdetector::selinux::detail {
             snapshot.failure_reason = "selinux_check_access unavailable from the current carrier.";
             return snapshot;
         }
-        if (!allow_access_checks) {
-            snapshot.failure_reason =
-                    "Skipped: the status page probe did not show libselinux can map /sys/fs/selinux/status safely.";
-            return snapshot;
-        }
         if (!carrier_matches_expected || carrier_context.rfind(kExpectedCarrierPrefix, 0) != 0) {
             snapshot.failure_reason = "Carrier context is not app_zygote.";
             snapshot.notes.push_back("Dirty policy access checks require the dedicated app_zygote carrier.");
@@ -67,6 +62,11 @@ namespace duckdetector::selinux::detail {
         if (dyntransition_check_passed.has_value() && !*dyntransition_check_passed) {
             snapshot.failure_reason = "app_zygote dyntransition self-check failed.";
             snapshot.notes.push_back("Dirty policy access checks were skipped because the carrier could not confirm app_zygote -> isolated_app dyntransition.");
+            return snapshot;
+        }
+        if (!allow_access_checks) {
+            snapshot.failure_reason =
+                    "Skipped: the status page probe did not show libselinux can map /sys/fs/selinux/status safely.";
             return snapshot;
         }
 

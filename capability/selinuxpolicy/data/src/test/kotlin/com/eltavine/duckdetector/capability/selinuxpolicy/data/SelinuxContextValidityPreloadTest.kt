@@ -68,7 +68,7 @@ class SelinuxContextValidityPreloadTest {
             currentUid = 10000,
             appUid = 10000,
             isUserBuild = true,
-            statusPage = INTACT_STATUS_PAGE,
+            accessCheckBlockReason = null,
             inspectProcAttrCurrent = {
                 listOf(
                     SelinuxProcAttrCurrentResult(
@@ -158,7 +158,7 @@ class SelinuxContextValidityPreloadTest {
             currentUid = 10000,
             appUid = 10000,
             isUserBuild = true,
-            statusPage = INTACT_STATUS_PAGE,
+            accessCheckBlockReason = null,
             inspectProcAttrCurrent = {
                 inspectCalls += 1
                 listOf(
@@ -195,18 +195,13 @@ class SelinuxContextValidityPreloadTest {
 
     @Test
     fun `a status page that is not safe keeps every access check away from libselinux`() {
-        val hostile = SelinuxStatusPageResult(
-            state = SelinuxStatusPageState.HOSTILE,
-            attempted = true,
-            terminatingSignal = 9,
-        )
-        val inconclusive = SelinuxStatusPageResult(
-            state = SelinuxStatusPageState.INCONCLUSIVE,
+        val faulted = SelinuxStatusPageResult.Faulted(signal = 9)
+        val inconclusive = SelinuxStatusPageResult.Inconclusive(
+            reason = "Status page child could not be started (errno=11); status page probe not run.",
             attempted = false,
-            failureReason = "fork failed (errno=11); status page probe not run.",
         )
 
-        listOf(hostile, inconclusive).forEach { statusPage ->
+        listOf(faulted, inconclusive).forEach { statusPage ->
             var accessChecks = 0
             var attrWrites = 0
             val snapshot = SelinuxContextValidityPreload.augmentPreloadSnapshot(
@@ -214,7 +209,7 @@ class SelinuxContextValidityPreloadTest {
                 currentUid = 10000,
                 appUid = 10000,
                 isUserBuild = true,
-                statusPage = statusPage,
+                accessCheckBlockReason = statusPage.accessCheckBlockReason,
                 inspectProcAttrCurrent = {
                     attrWrites += 1
                     emptyList()
@@ -234,7 +229,7 @@ class SelinuxContextValidityPreloadTest {
             assertFalse(snapshot.javaDirtyPolicyAvailable)
             assertFalse(snapshot.javaDirtyPolicyProbeAttempted)
             assertFalse(snapshot.javaDirtyPolicyTrusted)
-            assertEquals(statusPage.skipReason, snapshot.javaDirtyPolicyFailureReason)
+            assertEquals(statusPage.accessCheckBlockReason, snapshot.javaDirtyPolicyFailureReason)
             // Writing /proc/self/attr/current never touches the status page, so it still runs.
             assertEquals(1, attrWrites)
             assertTrue(snapshot.procAttrCurrentProbeAttempted)
@@ -243,10 +238,8 @@ class SelinuxContextValidityPreloadTest {
 
     @Test
     fun `a status page that killed the child is reported as a faulted seqno oracle`() {
-        val statusPage = SelinuxStatusPageResult(
-            state = SelinuxStatusPageState.HOSTILE,
-            attempted = true,
-            terminatingSignal = 9,
+        val statusPage = SelinuxStatusPageResult.Faulted(
+            signal = 9,
             notes = listOf("Child was killed by SIGKILL on the first read of the mapping."),
         )
 
@@ -255,7 +248,7 @@ class SelinuxContextValidityPreloadTest {
             currentUid = 10000,
             appUid = 10000,
             isUserBuild = true,
-            statusPage = statusPage,
+            accessCheckBlockReason = statusPage.accessCheckBlockReason,
             inspectProcAttrCurrent = { emptyList() },
             inspectPolicyloadSeqno = { SelinuxPolicyloadSeqnoProbe().inspect(statusPage) },
             checkAccess = { _, _, _, _ -> null },
@@ -355,12 +348,4 @@ class SelinuxContextValidityPreloadTest {
         pidContextMatchesCurrent = true,
         procSelfContextMatchesCurrent = true,
     )
-
-    private companion object {
-        val INTACT_STATUS_PAGE = SelinuxStatusPageResult(
-            state = SelinuxStatusPageState.INTACT,
-            attempted = true,
-            header = SelinuxStatusHeader(version = 1, sequence = 4, enforcing = 1, policyload = 2, denyUnknown = 0),
-        )
-    }
 }
