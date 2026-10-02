@@ -137,6 +137,7 @@ internal fun summaryResIdForKey(summaryKey: String?): Int {
         "author_summary_aviraxp" -> R.string.author_summary_aviraxp
         "author_summary_5ec1cff" -> R.string.author_summary_5ec1cff
         "author_summary_wuying" -> R.string.author_summary_wuying
+        "author_summary_sinanb9" -> R.string.author_summary_sinanb9
         else -> R.string.author_summary_default
     }
 }

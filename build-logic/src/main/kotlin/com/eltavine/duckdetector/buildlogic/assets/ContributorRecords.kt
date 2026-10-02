@@ -145,6 +145,16 @@ private val LOCAL_CONTRIBUTORS = listOf(
         summaryKey = "author_summary_wuying",
         contributionKeys = listOf("security"),
     ),
+    LocalContributor(
+        login = "sinanb9",
+        name = "sinanb9",
+        profileUrl = "https://github.com/sinanb9",
+        avatarFileName = "sinanb9.jpg",
+        avatarAssetPath = "github_contributors/avatars/sinanb9.jpg",
+        contributions = 1,
+        summaryKey = "author_summary_sinanb9",
+        contributionKeys = listOf("security"),
+    ),
 )
 
 private fun sanitizeAssetFileName(login: String): String {
