@@ -79,3 +79,21 @@ The evidence review changed what several probes report. These changes were verif
 
 Validate them on a stock device, a rooted device with /data/adb present, an SDK host with an old target SDK, and a non-arm64 device before relying on the new states in a release.
 
+## Root manager catalogues across detectors
+
+Three detectors name root manager packages from separate lists: Root Managers' catalogue, Native
+Root's `KERNELSU_MANAGER_PACKAGES`, and Dangerous Apps' root-tool entries. Root Managers is the only one
+that identifies a manager past a rename, by the manager key each KernelSU-family kernel trusts and by
+the daemons the managers ship, and it already reads package visibility through
+`capability/packageinventory`. The package lists still overlap. They should not be presented as
+independent evidence, because Root Managers' launcher and certificate reads and Native Root's manifest
+read all pass through PackageManager and `AppsFilter`; only Dangerous Apps' file-system methods take
+another path. Moving the manager-key catalogue and the signing-certificate read into a capability
+would let Native Root and Dangerous Apps match renamed managers too. It needs one per-scan read of the
+inventory (see "Shared per-scan platform snapshots") and on-device validation before it lands.
+
+The manager key is read only in the caller's profile, because PackageManager answers for the calling
+user. Reading the v2 signature block from `ApplicationInfo.sourceDir` would extend the key to apps
+installed only in another profile; that needs an APK signing-block parser and a device pass on the
+SELinux access to other profiles' APKs.
+
