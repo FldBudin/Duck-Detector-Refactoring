@@ -133,6 +133,13 @@
       "reason": "Exercises the reflective method gateway against fake service methods."
     },
     {
+      "path": "feature/rootmanagers/data/src/main/kotlin/com/eltavine/duckdetector/features/rootmanagers/data/probes/LauncherProfileEnumerator.kt",
+      "uses": [
+        "operations"
+      ],
+      "reason": "Reads the hidden ApplicationInfo.zygotePreloadName field, which is absent from the SDK, through HiddenApiBypass so a manager's zygote preload name can match."
+    },
+    {
       "path": "feature/tee/data/src/main/kotlin/com/eltavine/duckdetector/features/tee/data/verification/keystore/KeyMintCapabilityProbe.kt",
       "uses": [
         "operations"

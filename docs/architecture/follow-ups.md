@@ -79,3 +79,13 @@ The evidence review changed what several probes report. These changes were verif
 
 Validate them on a stock device, a rooted device with /data/adb present, an SDK host with an old target SDK, and a non-arm64 device before relying on the new states in a release.
 
+## Root manager catalogues across detectors
+
+Three detectors name root manager packages from separate lists: Root Managers' own authoritative
+catalogue, Native Root's `KERNELSU_MANAGER_PACKAGES`, and Dangerous Apps' root-tool entries. Each list
+is owned by its detector and reached by a different mechanism (launcher visibility, a manifest read, a
+directory fallback), so the overlap is deliberate, and merging them would couple units the boundary
+policy keeps isolated. A capability that captured the installed package inventory once and handed it
+to every consumer would let the lists agree, but it changes probe timing and ordering (see "Shared
+per-scan platform snapshots") and needs on-device validation before it lands.
+
