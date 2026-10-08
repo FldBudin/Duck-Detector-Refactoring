@@ -20,14 +20,13 @@ package com.eltavine.duckdetector.core.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.widget.Toast
 
 /**
- * Puts [text] on the clipboard under [label], and shows [confirmation] as a toast.
- *
- * The toast shows on every Android version: the hidden double-tap copy on a detector card has no
- * other visible sign that it fired. From Android 13 the system also shows its own clipboard
- * confirmation, so the two appear together.
+ * Puts [text] on the clipboard under [label], and shows [confirmation] where the system does not
+ * confirm the copy itself: from Android 13 it does for every clipboard write, and a toast would
+ * repeat it.
  *
  * @return false when the device offers no clipboard.
  */
@@ -39,6 +38,8 @@ public fun copyPlainTextToClipboard(
 ): Boolean {
     val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return false
     clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
-    Toast.makeText(context, confirmation, Toast.LENGTH_SHORT).show()
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        Toast.makeText(context, confirmation, Toast.LENGTH_SHORT).show()
+    }
     return true
 }
