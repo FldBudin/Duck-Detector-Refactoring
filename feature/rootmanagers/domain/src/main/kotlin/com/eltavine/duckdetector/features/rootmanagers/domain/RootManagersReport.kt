@@ -17,6 +17,8 @@
 
 package com.eltavine.duckdetector.features.rootmanagers.domain
 
+import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
+
 enum class RootManagersStage {
     LOADING,
     READY,
@@ -45,15 +47,31 @@ data class RootManagersReport(
     val enumerationState: RootManagersEnumerationState,
     val profileScans: List<RootManagersProfileScan> = emptyList(),
     val entries: List<RootManagerEntry> = emptyList(),
+    val coverage: RootManagersCoverage = RootManagersCoverage(),
     val issues: List<String> = emptyList(),
 ) {
-    /** Profiles the enumeration actually read; a denied profile is recorded but not counted. */
-    val profilesScanned: Int
-        get() = profileScans.count { scan -> !scan.denied }
+    /** Profiles the enumeration actually read; a denied or empty profile is recorded but not counted. */
+    val profilesSearched: Int
+        get() = profileScans.count { scan -> scan.state == ProfileScanState.SEARCHED }
 
-    /** Launcher activities seen across every profile, matched or not, so an empty result is explained. */
     val launcherActivitiesSeen: Int
         get() = profileScans.sumOf { scan -> scan.launcherActivitiesSeen }
+
+    val appsChecked: Int
+        get() = profileScans.sumOf { scan -> scan.appsChecked }
+
+    /**
+     * Whether an empty result may read as clean: every returned profile was searched, the caller saw
+     * itself where it should, PackageManager visibility is full, and certificates could be read.
+     * Anything less is a partial evaluation, which is never reported as all clear.
+     */
+    val complete: Boolean
+        get() = enumerationState == RootManagersEnumerationState.EVALUATED &&
+            profileScans.isNotEmpty() &&
+            profileScans.all { scan -> scan.state == ProfileScanState.SEARCHED } &&
+            coverage.callerSelfObserved != false &&
+            coverage.packageVisibility == InstalledPackageVisibility.FULL &&
+            !coverage.certificatesUnavailable
 
     companion object {
         fun loading(): RootManagersReport = RootManagersReport(
@@ -70,25 +88,49 @@ data class RootManagersReport(
         fun evaluated(
             entries: List<RootManagerEntry>,
             profileScans: List<RootManagersProfileScan>,
+            coverage: RootManagersCoverage,
             issues: List<String> = emptyList(),
         ): RootManagersReport = RootManagersReport(
             stage = RootManagersStage.READY,
             enumerationState = RootManagersEnumerationState.EVALUATED,
             profileScans = profileScans,
             entries = entries,
+            coverage = coverage,
             issues = issues,
         )
 
-        fun unavailable(reason: String): RootManagersReport = RootManagersReport(
+        /**
+         * The launcher enumeration failed; entries the caller-profile PackageManager sweep still
+         * found are kept, because a manager seen there is present whatever the launcher path did.
+         */
+        fun unavailable(
+            reason: String,
+            entries: List<RootManagerEntry> = emptyList(),
+            profileScans: List<RootManagersProfileScan> = emptyList(),
+            coverage: RootManagersCoverage = RootManagersCoverage(),
+            issues: List<String> = emptyList(),
+        ): RootManagersReport = RootManagersReport(
             stage = RootManagersStage.READY,
             enumerationState = RootManagersEnumerationState.UNAVAILABLE,
-            issues = listOf(reason),
+            profileScans = profileScans,
+            entries = entries,
+            coverage = coverage,
+            issues = listOf(reason) + issues,
         )
 
-        fun undecidable(reason: String): RootManagersReport = RootManagersReport(
+        fun undecidable(
+            reason: String,
+            entries: List<RootManagerEntry> = emptyList(),
+            profileScans: List<RootManagersProfileScan> = emptyList(),
+            coverage: RootManagersCoverage = RootManagersCoverage(),
+            issues: List<String> = emptyList(),
+        ): RootManagersReport = RootManagersReport(
             stage = RootManagersStage.READY,
             enumerationState = RootManagersEnumerationState.UNDECIDABLE,
-            issues = listOf(reason),
+            profileScans = profileScans,
+            entries = entries,
+            coverage = coverage,
+            issues = listOf(reason) + issues,
         )
     }
 }

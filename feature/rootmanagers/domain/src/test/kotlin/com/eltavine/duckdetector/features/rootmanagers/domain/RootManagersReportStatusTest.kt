@@ -17,6 +17,7 @@
 
 package com.eltavine.duckdetector.features.rootmanagers.domain
 
+import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import org.junit.Assert.assertEquals
@@ -37,48 +38,62 @@ class RootManagersReportStatusTest {
     }
 
     @Test
-    fun `an evaluated scan without entries is clean`() {
-        val report = RootManagersReport.evaluated(entries = emptyList(), profileScans = twoProfiles())
+    fun `a complete evaluation without entries is clean`() {
+        assertEquals(DetectorStatus.allClear(), evaluated().toDetectorStatus())
+    }
+
+    @Test
+    fun `an unobserved or denied profile makes an empty result partial`() {
+        val empty = evaluated(profileScans = listOf(searched(0), RootManagersProfileScan(10, ProfileScanState.EMPTY)))
+        val denied = evaluated(profileScans = listOf(searched(0), RootManagersProfileScan(10, ProfileScanState.DENIED)))
+
+        assertEquals(RootManagersOutcome.PARTIAL, empty.outcome())
+        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), denied.toDetectorStatus())
+    }
+
+    @Test
+    fun `filtered visibility, a missing self entry or unreadable certificates make an empty result partial`() {
+        val filtered = evaluated(coverage = fullCoverage().copy(packageVisibility = InstalledPackageVisibility.RESTRICTED))
+        val selfMissing = evaluated(coverage = fullCoverage().copy(callerSelfObserved = false))
+        val noCertificates = evaluated(coverage = fullCoverage().copy(certificatesRead = 0, certificateReadFailures = 9))
+
+        listOf(filtered, selfMissing, noCertificates).forEach { report ->
+            assertEquals(RootManagersOutcome.PARTIAL, report.outcome())
+        }
+    }
+
+    @Test
+    fun `a caller without a launcher activity is not held to the self check`() {
+        val report = evaluated(coverage = fullCoverage().copy(callerSelfObserved = null))
 
         assertEquals(DetectorStatus.allClear(), report.toDetectorStatus())
     }
 
     @Test
-    fun `a strong hit is a warning`() {
-        val report = RootManagersReport.evaluated(
-            entries = listOf(entry(RootManagerConfidence.HIGH)),
-            profileScans = twoProfiles(),
-        )
-
-        assertEquals(DetectorStatus.warning(), report.toDetectorStatus())
+    fun `an identified manager is a warning`() {
+        assertEquals(DetectorStatus.warning(), evaluated(listOf(entry(RootManagerConfidence.HIGH))).toDetectorStatus())
+        assertEquals(DetectorStatus.warning(), evaluated(listOf(entry(RootManagerConfidence.MEDIUM))).toDetectorStatus())
     }
 
     @Test
-    fun `a weak-only hit stays informational`() {
-        val report = RootManagersReport.evaluated(
-            entries = listOf(entry(RootManagerConfidence.LOW)),
-            profileScans = twoProfiles(),
-        )
+    fun `an identified manager that hid its launcher icon is danger`() {
+        val report = evaluated(listOf(entry(RootManagerConfidence.HIGH, hidesLauncherIcon = true)))
+
+        assertEquals(RootManagersOutcome.CONCEALED_MANAGER, report.outcome())
+        assertEquals(DetectorStatus.danger(), report.toDetectorStatus())
+    }
+
+    @Test
+    fun `a weak-only hit stays informational, even with a hidden icon`() {
+        val report = evaluated(listOf(entry(RootManagerConfidence.LOW, hidesLauncherIcon = true)))
 
         assertEquals(DetectorStatus.info(InfoKind.SUPPORT), report.toDetectorStatus())
     }
 
-    private fun twoProfiles() = listOf(
-        RootManagersProfileScan(profileUserId = 0),
-        RootManagersProfileScan(profileUserId = 10),
-    )
+    @Test
+    fun `entries found by the PackageManager sweep survive an unavailable launcher enumeration`() {
+        val report = RootManagersReport.unavailable("denied", entries = listOf(entry(RootManagerConfidence.HIGH)))
 
-    private fun entry(confidence: RootManagerConfidence) = RootManagerEntry(
-        family = RootManagerFamily.KERNEL_SU,
-        packageName = "me.weishu.kernelsu",
-        displayName = "KernelSU",
-        profileUserId = 0,
-        componentClassName = "me.weishu.kernelsu.ui.MainActivity",
-        applicationClassName = "me.weishu.kernelsu.KernelSUApplication",
-        sourceDir = null,
-        uid = null,
-        firstInstallTime = null,
-        anchors = setOf(RootManagerAnchor.PACKAGE_NAME, RootManagerAnchor.APPLICATION_CLASS),
-        confidence = confidence,
-    )
+        assertEquals(DetectorStatus.warning(), report.toDetectorStatus())
+    }
 }

@@ -20,6 +20,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":capability:packageinventory:domain"))
     api(project(":core:evidence"))
     api(project(":core:report"))
     api(project(":feature:rootmanagers:domain"))

@@ -18,146 +18,128 @@
 package com.eltavine.duckdetector.features.rootmanagers.domain
 
 /**
- * Turns launcher-visible records into root manager entries, matching per field.
+ * Turns observed apps into root manager entries, matching per field.
  *
- * The fields are independent evidence, so a family counts as matched when any strong field matched
- * (a surviving package name, application class, or zygote preload name), or when two weak fields did.
- * A single weak field never produces an entry: it is a word a launcher label or a conventional
- * `.MainActivity` could carry by coincidence.
+ * The fields are independent evidence, so a family counts as matched when any strong field matched,
+ * or when two weak fields did. A single weak field never produces an entry: it is a word a launcher
+ * label or a conventional `.MainActivity` could carry by coincidence. A signing-certificate match is
+ * cryptographic and yields high confidence on its own.
  */
 object RootManagerEntryRules {
 
     fun entries(
-        records: List<LauncherActivityRecord>,
+        apps: List<ObservedApp>,
         signatures: List<RootManagerSignature> = RootManagerCatalog.signatures,
-    ): List<RootManagerEntry> = records
-        .mapNotNull { record -> match(record, signatures) }
-        // An app can expose several launcher activities; keep the anchor-richest one per (user, package).
-        .groupBy { entry -> entry.profileUserId to entry.packageName }
+    ): List<RootManagerEntry> = apps
+        .groupBy { app -> app.profileUserId to app.packageName }
         .values
-        .map { group -> group.maxByOrNull { entry -> entry.anchors.size } ?: group.first() }
+        .mapNotNull { group -> bestEntry(group, signatures) }
         .sortedWith(compareBy<RootManagerEntry>({ it.profileUserId }, { it.family.ordinal }, { it.packageName }))
 
     fun match(
-        record: LauncherActivityRecord,
+        app: ObservedApp,
         signatures: List<RootManagerSignature> = RootManagerCatalog.signatures,
-    ): RootManagerEntry? {
-        val best = signatures
-            .mapIndexedNotNull { index, signature -> candidate(record, signature, index) }
-            .maxWithOrNull(CANDIDATE_ORDER)
-        return best?.toEntry()
+    ): RootManagerEntry? = signatures
+        .mapIndexedNotNull { index, signature -> candidate(app, signature, index) }
+        .maxWithOrNull(CANDIDATE_ORDER)
+        ?.toEntry()
+
+    /**
+     * One app can be seen once per launcher activity and once through PackageManager. Each launcher
+     * view is merged with the PackageManager view, which alone carries the certificate and payloads,
+     * and the richest resulting entry stands for the app in that profile.
+     */
+    private fun bestEntry(group: List<ObservedApp>, signatures: List<RootManagerSignature>): RootManagerEntry? {
+        val packageManagerView = group.firstOrNull { it.source == ObservationSource.PACKAGE_MANAGER }
+        val launcherViews = group.filter { it.source == ObservationSource.LAUNCHER_APPS }
+        val views = when {
+            packageManagerView == null -> launcherViews
+            launcherViews.isEmpty() -> listOf(packageManagerView)
+            else -> launcherViews.map { view -> view.mergedWith(packageManagerView) }
+        }
+        return views.mapNotNull { view -> match(view, signatures) }.maxWithOrNull(ENTRY_ORDER)
     }
 
-    private fun candidate(
-        record: LauncherActivityRecord,
-        signature: RootManagerSignature,
-        index: Int,
-    ): Candidate? {
-        val anchors = matchedAnchors(record, signature)
+    private fun ObservedApp.mergedWith(packageManagerView: ObservedApp): ObservedApp = copy(
+        applicationClassName = applicationClassName ?: packageManagerView.applicationClassName,
+        zygotePreloadName = zygotePreloadName ?: packageManagerView.zygotePreloadName,
+        signingCertificates = (signingCertificates + packageManagerView.signingCertificates).distinct(),
+        nativePayloads = nativePayloads + packageManagerView.nativePayloads,
+        sourceDir = sourceDir ?: packageManagerView.sourceDir,
+        uid = uid ?: packageManagerView.uid,
+        firstInstallTime = firstInstallTime ?: packageManagerView.firstInstallTime,
+    )
+
+    private fun candidate(app: ObservedApp, signature: RootManagerSignature, index: Int): Candidate? {
+        val anchors = RootManagerAnchorMatcher.matchedAnchors(app, signature)
         if (!isMatch(anchors)) {
             return null
         }
         return Candidate(
-            record = record,
+            app = app,
             signature = signature,
             anchors = anchors,
             confidence = confidence(anchors),
             index = index,
-            labelPrefixLength = longestMatch(record.label, signature.labelPrefixes, prefix = true),
-            applicationClassSuffixLength = longestMatch(
-                value = record.applicationClassName,
-                candidates = signature.applicationClassSuffixes,
-                prefix = false,
-            ),
+            namespaceHits = RootManagerAnchorMatcher.namespaceHits(app, signature),
+            labelPrefixLength = RootManagerAnchorMatcher.longestLabelPrefix(app, signature),
         )
-    }
-
-    private fun matchedAnchors(
-        record: LauncherActivityRecord,
-        signature: RootManagerSignature,
-    ): Set<RootManagerAnchor> {
-        val anchors = mutableSetOf<RootManagerAnchor>()
-        if (record.packageName in signature.defaultPackageNames ||
-            signature.namespacePrefixes.any { record.packageName.startsWith(it) }
-        ) {
-            anchors += RootManagerAnchor.PACKAGE_NAME
-        }
-        val applicationClass = record.applicationClassName
-        if (applicationClass != null &&
-            signature.applicationClassSuffixes.any { applicationClass.endsWith(it) }
-        ) {
-            anchors += RootManagerAnchor.APPLICATION_CLASS
-        }
-        // The zygote name's suffix and namespace are two readings of one field, so they count once.
-        val zygotePreload = record.zygotePreloadName
-        if (zygotePreload != null &&
-            (signature.zygotePreloadNameSuffixes.any { zygotePreload.endsWith(it) } ||
-                signature.zygotePreloadNamespaces.any { zygotePreload.startsWith(it) })
-        ) {
-            anchors += RootManagerAnchor.ZYGOTE_PRELOAD
-        }
-        val label = record.label
-        if (label != null && signature.labelPrefixes.any { label.startsWith(it) }) {
-            anchors += RootManagerAnchor.LABEL
-        }
-        val componentClass = record.componentClassName
-        if (componentClass != null &&
-            signature.launcherClassSuffixes.any { componentClass.endsWith(it) }
-        ) {
-            anchors += RootManagerAnchor.LAUNCHER_CLASS
-        }
-        return anchors
     }
 
     private fun isMatch(anchors: Set<RootManagerAnchor>): Boolean =
         anchors.any { it.strong } || anchors.size >= 2
 
     private fun confidence(anchors: Set<RootManagerAnchor>): RootManagerConfidence = when {
+        anchors.any { it.cryptographic } -> RootManagerConfidence.HIGH
         anchors.none { it.strong } -> RootManagerConfidence.LOW
         anchors.size >= 2 -> RootManagerConfidence.HIGH
         else -> RootManagerConfidence.MEDIUM
     }
 
-    private fun longestMatch(value: String?, candidates: Set<String>, prefix: Boolean): Int {
-        val text = value ?: return 0
-        return candidates
-            .filter { candidate -> if (prefix) text.startsWith(candidate) else text.endsWith(candidate) }
-            .maxOfOrNull { it.length } ?: 0
-    }
-
     /**
-     * Ranks the families one record matched, so a record becomes a single entry under its best fit:
-     * the shared `.KernelSUApplication` makes several signatures match, and the ranking lands the
-     * record on its most specific family (ties fall back to catalogue order).
+     * Ranks the families one app matched, so it becomes a single entry under its best fit. The
+     * shared `.KernelSUApplication`, `.magica.AppZygotePreload` and `libksud.so` match every KernelSU
+     * fork, so the ranking prefers what separates them: the fork's own manager key, then its package
+     * name, then how many class names sit in its code namespace, then the longest label prefix.
+     * Remaining ties fall back to catalogue order.
      */
     private val CANDIDATE_ORDER: Comparator<Candidate> =
-        compareBy<Candidate> { if (RootManagerAnchor.PACKAGE_NAME in it.anchors) 1 else 0 }
+        compareBy<Candidate> { if (RootManagerAnchor.SIGNING_CERTIFICATE in it.anchors) 1 else 0 }
+            .thenBy { if (RootManagerAnchor.PACKAGE_NAME in it.anchors) 1 else 0 }
+            .thenBy { it.namespaceHits }
             .thenBy { it.labelPrefixLength }
-            .thenBy { it.applicationClassSuffixLength }
             .thenBy { it.anchors.size }
             .thenByDescending { it.index }
 
+    // RootManagerConfidence is declared strongest first, so a lower ordinal is the better entry.
+    private val ENTRY_ORDER: Comparator<RootManagerEntry> =
+        compareBy<RootManagerEntry> { -it.confidence.ordinal }
+            .thenBy { it.anchors.size }
+
     private data class Candidate(
-        val record: LauncherActivityRecord,
+        val app: ObservedApp,
         val signature: RootManagerSignature,
         val anchors: Set<RootManagerAnchor>,
         val confidence: RootManagerConfidence,
         val index: Int,
+        val namespaceHits: Int,
         val labelPrefixLength: Int,
-        val applicationClassSuffixLength: Int,
     ) {
         fun toEntry(): RootManagerEntry = RootManagerEntry(
             family = signature.family,
-            packageName = record.packageName,
-            displayName = record.label?.takeIf { it.isNotBlank() } ?: signature.family.displayName,
-            profileUserId = record.profileUserId,
-            componentClassName = record.componentClassName,
-            applicationClassName = record.applicationClassName,
-            sourceDir = record.sourceDir,
-            uid = record.uid,
-            firstInstallTime = record.firstInstallTime,
+            packageName = app.packageName,
+            displayName = app.label?.takeIf { it.isNotBlank() } ?: signature.family.displayName,
+            profileUserId = app.profileUserId,
+            componentClassName = app.componentClassName,
+            applicationClassName = app.applicationClassName,
+            sourceDir = app.sourceDir,
+            uid = app.uid,
+            firstInstallTime = app.firstInstallTime,
             anchors = anchors,
             confidence = confidence,
+            matchedCertificate = app.signingCertificates.firstOrNull { it in signature.signingCertificates },
+            matchedPayloads = app.nativePayloads.intersect(signature.nativePayloads),
+            hidesLauncherIcon = app.hidesLauncherIcon,
         )
     }
 }

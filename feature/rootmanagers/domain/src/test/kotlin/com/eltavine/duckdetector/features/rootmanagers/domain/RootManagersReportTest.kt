@@ -18,44 +18,48 @@
 package com.eltavine.duckdetector.features.rootmanagers.domain
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RootManagersReportTest {
 
     @Test
-    fun `a denied profile is recorded but not counted as searched`() {
-        val report = RootManagersReport.evaluated(
-            entries = emptyList(),
+    fun `only searched profiles count as searched`() {
+        val report = evaluated(
             profileScans = listOf(
-                RootManagersProfileScan(profileUserId = 0, records = records(3)),
-                RootManagersProfileScan(profileUserId = 10, denied = true),
+                searched(0, apps = 3),
+                RootManagersProfileScan(10, ProfileScanState.DENIED),
+                RootManagersProfileScan(11, ProfileScanState.EMPTY),
             ),
         )
 
-        assertEquals(2, report.profileScans.size)
-        assertEquals(1, report.profilesScanned)
+        assertEquals(3, report.profileScans.size)
+        assertEquals(1, report.profilesSearched)
         assertEquals(3, report.launcherActivitiesSeen)
+        assertEquals(3, report.appsChecked)
+        assertFalse(report.complete)
     }
 
     @Test
-    fun `an enumeration that never ran reports no scanned profiles`() {
-        assertEquals(0, RootManagersReport.undecidable("no profiles").profilesScanned)
-        assertEquals(0, RootManagersReport.undecidable("no profiles").launcherActivitiesSeen)
-        assertEquals(0, RootManagersReport.unavailable("denied").profilesScanned)
+    fun `an enumeration that never ran reports no searched profiles and is never complete`() {
+        val undecidable = RootManagersReport.undecidable("no profiles")
+
+        assertEquals(0, undecidable.profilesSearched)
+        assertEquals(0, undecidable.appsChecked)
+        assertFalse(undecidable.complete)
+        assertFalse(RootManagersReport.unavailable("denied").complete)
     }
 
-    private fun records(count: Int) = List(count) { index ->
-        LauncherActivityRecord(
-            profileUserId = 0,
-            packageName = "com.example.app$index",
-            componentClassName = null,
-            applicationClassName = null,
-            label = null,
-            zygotePreloadName = null,
-            sourceDir = null,
-            processName = null,
-            uid = null,
-            firstInstallTime = null,
-        )
+    @Test
+    fun `a fully searched, fully visible evaluation is complete`() {
+        assertTrue(evaluated().complete)
+    }
+
+    @Test
+    fun `certificates count as unavailable only when none could be read`() {
+        assertTrue(RootManagersCoverage(certificatesRead = 0, certificateReadFailures = 2).certificatesUnavailable)
+        assertFalse(RootManagersCoverage(certificatesRead = 5, certificateReadFailures = 2).certificatesUnavailable)
+        assertFalse(RootManagersCoverage().certificatesUnavailable)
     }
 }

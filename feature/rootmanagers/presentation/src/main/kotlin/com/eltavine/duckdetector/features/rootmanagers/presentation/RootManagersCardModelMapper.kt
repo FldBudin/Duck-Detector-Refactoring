@@ -17,252 +17,94 @@
 
 package com.eltavine.duckdetector.features.rootmanagers.presentation
 
-import com.eltavine.duckdetector.core.evidence.DetectorStatus
-import com.eltavine.duckdetector.core.evidence.InfoKind
-import com.eltavine.duckdetector.features.rootmanagers.domain.LauncherActivityRecord
-import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerConfidence
-import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerEntry
-import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersEnumerationState
-import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersProfileScan
+import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
+import com.eltavine.duckdetector.features.rootmanagers.domain.ProfileScanState
+import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersOutcome
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersReport
-import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersStage
+import com.eltavine.duckdetector.features.rootmanagers.domain.outcome
 import com.eltavine.duckdetector.features.rootmanagers.domain.toDetectorStatus
 import com.eltavine.duckdetector.features.rootmanagers.presentation.model.RootManagersCardModel
-import com.eltavine.duckdetector.features.rootmanagers.presentation.model.RootManagersDetailRowModel
 
 class RootManagersCardModelMapper {
 
-    fun map(report: RootManagersReport): RootManagersCardModel = RootManagersCardModel(
-        title = TITLE,
-        subtitle = subtitle(report),
-        status = report.toDetectorStatus(),
-        verdict = verdict(report),
-        summary = summary(report),
-        entryRows = report.entries.map(::entryRow),
-        profileRows = report.profileScans.map(::profileRow),
-        scanRows = scanRows(report),
-    )
+    private val rows = RootManagersRows()
 
-    private fun subtitle(report: RootManagersReport): String = when (report.stage) {
-        RootManagersStage.LOADING -> SUBTITLE
-        RootManagersStage.FAILED -> SUBTITLE
-        RootManagersStage.READY ->
-            "${report.entries.size} matched · ${report.launcherActivitiesSeen} launcher activities · " +
-                "${report.profilesScanned} profile(s) searched"
+    fun map(report: RootManagersReport): RootManagersCardModel {
+        val outcome = report.outcome()
+        return RootManagersCardModel(
+            title = TITLE,
+            subtitle = subtitle(report),
+            status = report.toDetectorStatus(),
+            verdict = verdict(outcome),
+            summary = summary(report, outcome),
+            entryRows = report.entries.map(rows::entryRow),
+            profileRows = report.profileScans.map(rows::profileRow),
+            scanRows = rows.scanRows(report),
+        )
     }
 
-    private fun verdict(report: RootManagersReport): String = when (report.stage) {
-        RootManagersStage.LOADING -> "Scanning"
-        RootManagersStage.FAILED -> "Scan failed"
-        RootManagersStage.READY -> when {
-            report.entries.any { entry -> entry.confidence != RootManagerConfidence.LOW } ->
-                "Root manager apps surfaced"
-
-            report.entries.isNotEmpty() -> "Weak root manager match"
-            report.enumerationState == RootManagersEnumerationState.UNAVAILABLE ->
-                "Launcher enumeration unavailable"
-
-            report.enumerationState == RootManagersEnumerationState.UNDECIDABLE ->
-                "Profiles not enumerated"
-
-            else -> "No root manager apps"
-        }
+    private fun subtitle(report: RootManagersReport): String = when (report.outcome()) {
+        RootManagersOutcome.SCANNING, RootManagersOutcome.FAILED -> SUBTITLE
+        else -> "${report.entries.size} matched · ${report.appsChecked} apps checked · " +
+            "${report.profilesSearched} profile(s) searched"
     }
 
-    private fun summary(report: RootManagersReport): String = when (report.stage) {
-        RootManagersStage.LOADING ->
-            "Enumerating launcher-visible apps across the accessible profiles."
+    private fun verdict(outcome: RootManagersOutcome): String = when (outcome) {
+        RootManagersOutcome.SCANNING -> "Scanning"
+        RootManagersOutcome.FAILED -> "Scan failed"
+        RootManagersOutcome.CONCEALED_MANAGER -> "Root manager hiding its icon"
+        RootManagersOutcome.MANAGER_FOUND -> "Root manager apps found"
+        RootManagersOutcome.WEAK_MATCH -> "Weak root manager match"
+        RootManagersOutcome.ENUMERATION_UNAVAILABLE -> "Launcher enumeration unavailable"
+        RootManagersOutcome.PROFILES_NOT_ENUMERATED -> "Profiles not enumerated"
+        RootManagersOutcome.PARTIAL -> "Partially evaluated"
+        RootManagersOutcome.CLEAN -> "No root manager apps"
+    }
 
-        RootManagersStage.FAILED ->
+    private fun summary(report: RootManagersReport, outcome: RootManagersOutcome): String = when (outcome) {
+        RootManagersOutcome.SCANNING ->
+            "Checking installed apps across the accessible profiles."
+
+        RootManagersOutcome.FAILED ->
             report.issues.firstOrNull() ?: "The scan failed before the enumeration ran."
 
-        RootManagersStage.READY -> when {
-            report.entries.any { entry -> entry.confidence != RootManagerConfidence.LOW } ->
-                "The launcher visibility enumeration matched ${report.entries.size} app(s) across " +
-                    "${report.profilesScanned} profile(s). A match is evidence an app is present, " +
-                    "not proof that the device is rooted."
+        RootManagersOutcome.CONCEALED_MANAGER ->
+            "Identified ${report.entries.size} root manager app(s); at least one disabled its launcher " +
+                "icon and is reachable only through app details. $PRESENCE_NOT_ROOT"
 
-            report.entries.isNotEmpty() ->
-                "Only weak anchors matched, so these apps are informational, never warnings."
+        RootManagersOutcome.MANAGER_FOUND ->
+            "Identified ${report.entries.size} root manager app(s) across ${report.profilesSearched} profile(s), " +
+                "${report.entries.count { it.matchedCertificate != null }} by a family kernel's manager key. " +
+                PRESENCE_NOT_ROOT
 
-            report.enumerationState == RootManagersEnumerationState.UNAVAILABLE ->
-                report.issues.firstOrNull()
-                    ?: "The launcher enumeration was unavailable, so the absence of matches says nothing."
+        RootManagersOutcome.WEAK_MATCH ->
+            "Only weak anchors matched, so these apps are informational, never warnings."
 
-            report.enumerationState == RootManagersEnumerationState.UNDECIDABLE ->
-                "No profile could be enumerated, so the absence of matches says nothing."
+        RootManagersOutcome.ENUMERATION_UNAVAILABLE ->
+            report.issues.firstOrNull()
+                ?: "The launcher enumeration was unavailable, so the absence of matches says nothing."
 
-            else ->
-                "The enumeration searched ${report.profilesScanned} profile(s), saw " +
-                    "${report.launcherActivitiesSeen} launcher activities, and matched no root manager app."
-        }
+        RootManagersOutcome.PROFILES_NOT_ENUMERATED ->
+            "No profile could be enumerated, so the absence of matches says nothing."
+
+        RootManagersOutcome.PARTIAL ->
+            "No root manager matched, but ${gaps(report).joinToString(", ")}, so the absence of matches is not proof."
+
+        RootManagersOutcome.CLEAN ->
+            "Checked ${report.appsChecked} app(s) across ${report.profilesSearched} profile(s), including " +
+                "${report.coverage.certificatesRead} signing certificates, and matched no root manager app."
     }
 
-    private fun entryRow(entry: RootManagerEntry): RootManagersDetailRowModel {
-        val anchors = anchorList(entry)
-        val detail = buildString {
-            append("via launcher visibility @user ${entry.profileUserId}")
-            append(" · anchors: $anchors")
-            entry.applicationClassName?.let { applicationClass -> append(" · application: $applicationClass") }
-        }
-        return RootManagersDetailRowModel(
-            label = "${entry.displayName} (${entry.packageName})",
-            value = entry.confidence.displayName,
-            status = statusFor(entry.confidence),
-            detail = detail,
-            hiddenCopyText = entryDiagnostics(entry),
-        )
-    }
-
-    private fun profileRow(scan: RootManagersProfileScan): RootManagersDetailRowModel {
-        val value = if (scan.denied) "Denied" else "${scan.launcherActivitiesSeen} activities"
-        val status = if (scan.denied) {
-            DetectorStatus.info(InfoKind.ERROR)
-        } else {
-            DetectorStatus.allClear()
-        }
-        return RootManagersDetailRowModel(
-            label = "user ${scan.profileUserId}",
-            value = value,
-            status = status,
-            hiddenCopyText = profileDiagnostics(scan),
-        )
-    }
-
-    private fun profileDiagnostics(scan: RootManagersProfileScan): String = buildString {
-        appendLine("Root Managers profile scan")
-        appendLine("Profile user id: ${scan.profileUserId}")
-        appendLine("Denied: ${scan.denied}")
-        appendLine("Launcher activities seen: ${scan.launcherActivitiesSeen}")
-        if (scan.records.isNotEmpty()) {
-            appendLine("Seen launcher activities:")
-            scan.records.forEach { record -> appendLine("  ${recordLine(record)}") }
-        }
-    }
-
-    private fun recordLine(record: LauncherActivityRecord): String = buildString {
-        append("package=${record.packageName}")
-        append(" component=${record.componentClassName ?: "none"}")
-        append(" application=${record.applicationClassName ?: "none"}")
-        append(" label=${record.label ?: "none"}")
-        append(" zygote=${record.zygotePreloadName ?: "none"}")
-    }
-
-    private fun scanRows(report: RootManagersReport): List<RootManagersDetailRowModel> {
-        if (report.stage != RootManagersStage.READY) {
-            return emptyList()
-        }
-        val diagnostics = enumerationDiagnostics(report)
-        return buildList {
-            add(
-                RootManagersDetailRowModel(
-                    label = "Enumeration",
-                    value = enumerationLabel(report.enumerationState),
-                    status = enumerationStatus(report.enumerationState),
-                    hiddenCopyText = diagnostics,
-                ),
-            )
-            add(
-                RootManagersDetailRowModel(
-                    label = "Profiles searched",
-                    value = "${report.profilesScanned} of ${report.profileScans.size}",
-                    status = if (report.profileScans.any { scan -> scan.denied }) {
-                        DetectorStatus.info(InfoKind.SUPPORT)
-                    } else {
-                        DetectorStatus.allClear()
-                    },
-                    hiddenCopyText = diagnostics,
-                ),
-            )
-            add(
-                RootManagersDetailRowModel(
-                    label = "Launcher activities seen",
-                    value = report.launcherActivitiesSeen.toString(),
-                    status = DetectorStatus.allClear(),
-                    hiddenCopyText = diagnostics,
-                ),
-            )
-            add(
-                RootManagersDetailRowModel(
-                    label = "Matched apps",
-                    value = report.entries.size.toString(),
-                    status = report.toDetectorStatus(),
-                    hiddenCopyText = diagnostics,
-                ),
-            )
-            if (report.issues.isNotEmpty()) {
-                add(
-                    RootManagersDetailRowModel(
-                        label = "Issues",
-                        value = report.issues.size.toString(),
-                        status = DetectorStatus.info(InfoKind.SUPPORT),
-                        detail = report.issues.joinToString(separator = "\n"),
-                        detailMonospace = true,
-                        hiddenCopyText = diagnostics,
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun enumerationLabel(state: RootManagersEnumerationState): String = when (state) {
-        RootManagersEnumerationState.EVALUATED -> "Searched"
-        RootManagersEnumerationState.UNAVAILABLE -> "Unavailable"
-        RootManagersEnumerationState.UNDECIDABLE -> "No profiles"
-    }
-
-    private fun enumerationStatus(state: RootManagersEnumerationState): DetectorStatus = when (state) {
-        RootManagersEnumerationState.EVALUATED -> DetectorStatus.allClear()
-        RootManagersEnumerationState.UNAVAILABLE -> DetectorStatus.info(InfoKind.ERROR)
-        RootManagersEnumerationState.UNDECIDABLE -> DetectorStatus.info(InfoKind.SUPPORT)
-    }
-
-    private fun anchorList(entry: RootManagerEntry): String =
-        entry.anchors.sortedBy { anchor -> anchor.ordinal }.joinToString(", ") { anchor -> anchor.displayName }
-
-    private fun statusFor(confidence: RootManagerConfidence): DetectorStatus = when (confidence) {
-        RootManagerConfidence.HIGH,
-        RootManagerConfidence.MEDIUM -> DetectorStatus.warning()
-
-        RootManagerConfidence.LOW -> DetectorStatus.info(InfoKind.SUPPORT)
-    }
-
-    private fun entryDiagnostics(entry: RootManagerEntry): String = buildString {
-        appendLine("Root manager match")
-        appendLine("Family: ${entry.family.displayName}")
-        appendLine("Package: ${entry.packageName}")
-        appendLine("Label: ${entry.displayName}")
-        appendLine("Profile user id: ${entry.profileUserId}")
-        appendLine("Confidence: ${entry.confidence.displayName}")
-        appendLine("Anchors: ${anchorList(entry)}")
-        appendLine("Component class: ${entry.componentClassName ?: "none"}")
-        appendLine("Application class: ${entry.applicationClassName ?: "none"}")
-        appendLine("Source dir: ${entry.sourceDir ?: "none"}")
-        appendLine("UID: ${entry.uid?.toString() ?: "unknown"}")
-        append("First install time: ${entry.firstInstallTime?.toString() ?: "unknown"}")
-    }
-
-    private fun enumerationDiagnostics(report: RootManagersReport): String = buildString {
-        appendLine("Root Managers enumeration")
-        appendLine("Stage: ${report.stage}")
-        appendLine("Enumeration state: ${report.enumerationState}")
-        appendLine("Profiles searched: ${report.profilesScanned} of ${report.profileScans.size}")
-        appendLine("Launcher activities seen: ${report.launcherActivitiesSeen}")
-        appendLine("Matched apps: ${report.entries.size}")
-        if (report.profileScans.isNotEmpty()) {
-            appendLine("Profile scans:")
-            report.profileScans.forEach { scan ->
-                appendLine("  user ${scan.profileUserId}: denied=${scan.denied}, activities=${scan.launcherActivitiesSeen}")
-            }
-        }
-        if (report.issues.isNotEmpty()) {
-            appendLine("Issues:")
-            report.issues.forEach { issue -> appendLine("  $issue") }
-        }
-    }
+    private fun gaps(report: RootManagersReport): List<String> = buildList {
+        if (report.profileScans.any { it.state != ProfileScanState.SEARCHED }) add("a profile was not observed")
+        if (report.coverage.callerSelfObserved == false) add("this app was missing from its own launcher list")
+        if (report.coverage.packageVisibility != InstalledPackageVisibility.FULL) add("package visibility is not full")
+        if (report.coverage.certificatesUnavailable) add("no signing certificate could be read")
+    }.ifEmpty { listOf("part of the evidence could not be read") }
 
     private companion object {
         const val TITLE = "Root Managers"
         const val SUBTITLE = "Root manager visibility"
+        const val PRESENCE_NOT_ROOT = "A match is evidence an app is installed, not proof that the device is rooted."
     }
 }

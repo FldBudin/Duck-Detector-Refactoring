@@ -17,17 +17,24 @@
 
 package com.eltavine.duckdetector.features.rootmanagers.presentation
 
+import com.eltavine.duckdetector.capability.packageinventory.domain.InstalledPackageVisibility
 import com.eltavine.duckdetector.core.evidence.DetectorStatus
 import com.eltavine.duckdetector.core.evidence.InfoKind
 import com.eltavine.duckdetector.core.report.ReportBlock
-import com.eltavine.duckdetector.features.rootmanagers.domain.LauncherActivityRecord
+import com.eltavine.duckdetector.features.rootmanagers.domain.CertificateFingerprint
+import com.eltavine.duckdetector.features.rootmanagers.domain.ObservationSource
+import com.eltavine.duckdetector.features.rootmanagers.domain.ObservedApp
+import com.eltavine.duckdetector.features.rootmanagers.domain.ProfileScanState
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerAnchor
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerConfidence
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerEntry
+import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerEntryRules
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagerFamily
+import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersCoverage
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersProfileScan
 import com.eltavine.duckdetector.features.rootmanagers.domain.RootManagersReport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -58,14 +65,29 @@ class RootManagersCardModelMapperTest {
         val export = model.toDetectorReport()
 
         assertEquals(DetectorStatus.warning(), model.status)
-        assertEquals(1, model.entryRows.size)
+        assertEquals("Root manager apps found", model.verdict)
         assertEquals(model.verdict, export.verdict)
         assertEquals(model.status.severity, export.severity)
-        val rows = export.blocks
-            .filterIsInstance<ReportBlock.Rows>()
-            .single { it.title == "Matched root managers" }
-            .rows
+        val rows = export.blocks.filterIsInstance<ReportBlock.Rows>().single { it.title == "Matched root managers" }.rows
         assertEquals(1, rows.size)
+    }
+
+    @Test
+    fun `a match by the manager key says so in its row`() {
+        val key = CertificateFingerprint(827, "c371061b19d8c7d7d6133c6a9bafe198fa944e50c1b31c9d8daa8d7f1fc2d2d6")
+        val model = mapper.map(report(listOf(entry(RootManagerConfidence.HIGH, matchedCertificate = key))))
+
+        assertTrue(model.entryRows.single().detail.orEmpty().contains("manager key"))
+        assertTrue(model.entryRows.single().hiddenCopyText.orEmpty().contains(key.sha256))
+    }
+
+    @Test
+    fun `a manager that hid its icon is danger`() {
+        val model = mapper.map(report(listOf(entry(RootManagerConfidence.HIGH, hidesLauncherIcon = true))))
+
+        assertEquals(DetectorStatus.danger(), model.status)
+        assertEquals("Root manager hiding its icon", model.verdict)
+        assertEquals(DetectorStatus.danger(), model.entryRows.single().status)
     }
 
     @Test
@@ -77,72 +99,81 @@ class RootManagersCardModelMapperTest {
     }
 
     @Test
-    fun `an evaluated scan without matches still shows the profiles it searched`() {
+    fun `a complete evaluation without matches shows what it checked`() {
         val model = mapper.map(report(emptyList()))
 
         assertEquals(DetectorStatus.allClear(), model.status)
         assertEquals("No root manager apps", model.verdict)
         assertEquals(2, model.profileRows.size)
         assertEquals("2 of 2", model.scanRows.single { it.label == "Profiles searched" }.value)
-        assertEquals("52", model.scanRows.single { it.label == "Launcher activities seen" }.value)
+        assertEquals("52", model.scanRows.single { it.label == "Apps checked" }.value)
+        assertEquals("120 read · 0 failed", model.scanRows.single { it.label == "Signing certificates" }.value)
     }
 
     @Test
-    fun `every node row carries the detail a double tap copies`() {
-        val model = mapper.map(report(listOf(entry(RootManagerConfidence.HIGH))))
+    fun `a partial evaluation is never clean`() {
+        val model = mapper.map(report(emptyList(), coverage = coverage().copy(packageVisibility = InstalledPackageVisibility.RESTRICTED)))
 
-        assertTrue(model.entryRows.all { row -> row.hiddenCopyText != null })
-        assertTrue(model.profileRows.all { row -> row.hiddenCopyText != null })
-        assertTrue(model.scanRows.all { row -> row.hiddenCopyText != null })
-        assertTrue(model.entryRows.single().hiddenCopyText.orEmpty().contains("me.weishu.kernelsu"))
-        assertTrue(model.scanRows.single().hiddenCopyText.orEmpty().contains("Launcher activities seen: 52"))
-        // The profile node copies the activities it actually saw, not only a count.
-        assertTrue(model.profileRows.first().hiddenCopyText.orEmpty().contains("com.example.0.app0"))
+        assertEquals(DetectorStatus.info(InfoKind.SUPPORT), model.status)
+        assertEquals("Partially evaluated", model.verdict)
+        assertTrue(model.summary.contains("package visibility is not full"))
     }
 
     @Test
-    fun `a denied profile row shows denied and copies the denial`() {
+    fun `every row carries a hidden copy, and none leaks an unmatched app`() {
+        val unmatched = (0 until 30).map { index ->
+            ObservedApp(0, "com.private.app$index", ObservationSource.LAUNCHER_APPS, label = "Private $index")
+        }
+        val kernelSu = ObservedApp(0, "me.weishu.kernelsu", ObservationSource.LAUNCHER_APPS, label = "KernelSU")
+        val entries = RootManagerEntryRules.entries(unmatched + kernelSu)
+        val model = mapper.map(report(entries))
+        val export = model.toDetectorReport()
+
+        val rows = model.entryRows + model.profileRows + model.scanRows
+        assertTrue(rows.all { row -> row.hiddenCopyText != null })
+        val everything = rows.flatMap { listOf(it.label, it.value, it.detail, it.hiddenCopyText) }.joinToString("\n") +
+            export.blocks.filterIsInstance<ReportBlock.Rows>().flatMap { it.rows }.joinToString("\n")
+        assertTrue(everything.contains("me.weishu.kernelsu"))
+        assertFalse(everything.contains("com.private.app"))
+    }
+
+    @Test
+    fun `a denied profile row shows denied and makes the result partial`() {
         val model = mapper.map(
-            RootManagersReport.evaluated(
+            report(
                 entries = emptyList(),
-                profileScans = listOf(
-                    RootManagersProfileScan(profileUserId = 0, records = records(0, 40)),
-                    RootManagersProfileScan(profileUserId = 10, denied = true),
-                ),
+                profileScans = listOf(searched(0, 40), RootManagersProfileScan(10, ProfileScanState.DENIED)),
             ),
         )
 
         val denied = model.profileRows.single { row -> row.label == "user 10" }
         assertEquals("Denied", denied.value)
         assertEquals(DetectorStatus.info(InfoKind.ERROR), denied.status)
-        assertTrue(denied.hiddenCopyText.orEmpty().contains("Denied: true"))
         assertEquals("1 of 2", model.scanRows.single { it.label == "Profiles searched" }.value)
+        assertEquals("Partially evaluated", model.verdict)
     }
 
-    private fun report(entries: List<RootManagerEntry>) = RootManagersReport.evaluated(
-        entries = entries,
-        profileScans = listOf(
-            RootManagersProfileScan(profileUserId = 0, records = records(0, 40)),
-            RootManagersProfileScan(profileUserId = 10, records = records(10, 12)),
-        ),
+    private fun report(
+        entries: List<RootManagerEntry>,
+        profileScans: List<RootManagersProfileScan> = listOf(searched(0, 40), searched(10, 12)),
+        coverage: RootManagersCoverage = coverage(),
+    ) = RootManagersReport.evaluated(entries = entries, profileScans = profileScans, coverage = coverage)
+
+    private fun searched(profileUserId: Int, apps: Int) =
+        RootManagersProfileScan(profileUserId, ProfileScanState.SEARCHED, launcherActivitiesSeen = apps, appsChecked = apps)
+
+    private fun coverage() = RootManagersCoverage(
+        callerSelfObserved = true,
+        packageVisibility = InstalledPackageVisibility.FULL,
+        certificatesRead = 120,
+        payloadDirectoriesRead = 80,
     )
 
-    private fun records(profileUserId: Int, count: Int) = List(count) { index ->
-        LauncherActivityRecord(
-            profileUserId = profileUserId,
-            packageName = "com.example.$profileUserId.app$index",
-            componentClassName = "com.example.$profileUserId.app$index.MainActivity",
-            applicationClassName = null,
-            label = null,
-            zygotePreloadName = null,
-            sourceDir = null,
-            processName = null,
-            uid = null,
-            firstInstallTime = null,
-        )
-    }
-
-    private fun entry(confidence: RootManagerConfidence) = RootManagerEntry(
+    private fun entry(
+        confidence: RootManagerConfidence,
+        hidesLauncherIcon: Boolean = false,
+        matchedCertificate: CertificateFingerprint? = null,
+    ) = RootManagerEntry(
         family = RootManagerFamily.KERNEL_SU,
         packageName = "me.weishu.kernelsu",
         displayName = "KernelSU",
@@ -154,5 +185,7 @@ class RootManagersCardModelMapperTest {
         firstInstallTime = null,
         anchors = setOf(RootManagerAnchor.PACKAGE_NAME, RootManagerAnchor.APPLICATION_CLASS),
         confidence = confidence,
+        matchedCertificate = matchedCertificate,
+        hidesLauncherIcon = hidesLauncherIcon,
     )
 }
