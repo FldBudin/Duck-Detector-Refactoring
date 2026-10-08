@@ -30,7 +30,7 @@ dependencies {
     api(project(":core:ui"))
     implementation(project(":feature:rootmanagers:detector"))
     implementation(project(":feature:rootmanagers:presentation"))
-    implementation(libs.androidx.foundation.layout)
     implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.material3)
     implementation(libs.androidx.ui)
 }
