@@ -4,6 +4,11 @@ The implementation is experimental. Source auditing and JVM fixtures do not vali
 runtime transport, historical reach or robustness across OEMs. No device was connected during this
 change (`adb devices -l` returned an empty list). Device results must be recorded before leaving Draft.
 
+For issue #363's proposed process-name extensions, follow the separate
+[experiment gates](research/nice-name/EXPERIMENTS.md) and
+[source audit](research/nice-name/README.md). Binary scanner controls do not
+establish renamed-manager coverage or authenticate a String's producer.
+
 ## Automated checks
 
 Run the repository checks and the focused tests:
@@ -48,8 +53,9 @@ aggregate counts, policy-target matches and diagnostics.
 5. Launch several distinct apps between fresh captures. Check whether observed sets grow, shrink
    or differ; compare against a main-process snapshot and across ABI/zygote boundaries. Establish
    neither a boot-wide history nor monotonicity from one device.
-6. Where controllable, compare USAP enabled/disabled and Java/native fork paths. Verify actual
-   ancestry and pool age using device-side diagnostics, rather than inferring fresh fork from bind.
+6. Where controllable, compare USAP enabled/disabled and Java/native fork paths. Verify with
+   device-side diagnostics that the collector's parent is the platform zygote, as source predicts
+   for service launches, rather than inferring a fresh fork from bind.
 7. Force binding denial, service death, hidden method failure, reader cancellation, dump over-budget,
    disk-full/permission failures and GC before capture. Verify unavailable/inconclusive results,
    bounded completion, descriptor cleanup, no lingering child or partial retained file, and that
