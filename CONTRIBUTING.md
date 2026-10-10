@@ -1,61 +1,65 @@
-# 贡献来源与署名规范
+<p align="center">
+  <a href="CONTRIBUTING.md">English</a> &nbsp; <a href="CONTRIBUTING_ZH.md">简体中文</a>
+</p>
 
-本规范适用于所有提交到本仓库的贡献：代码、文档、文案、资源与研究资料。
+# Contribution Provenance and Attribution
 
-它与 [`CODING_STANDARDS.md`](./CODING_STANDARDS.md) 配合使用：后者规定「改动怎么写、怎么测、怎么提交」，本规范规定「来源如何声明、署名如何给出、哪些来源不得引入」。
+This document applies to every contribution to this repository: code, documentation, copy, assets, and research material.
 
-## 1. 基本原则
+It works alongside [`CODING_STANDARDS.md`](./CODING_STANDARDS.md): that document covers how a change is written, tested, and submitted; this one covers how its sources are declared, how attribution is given, and which sources must not be introduced.
 
-- **可追溯**：贡献应能说明其思路与材料的来源类别。
-- **比例相称**：只对确有风险的来源设硬性约束，其余以说明和致谢为主。
-- **法域中立**：不预设贡献者所在法域；下文涉及法定权利的表述以「受版权保护的表达」为准。
+## 1. Principles
 
-## 2. 来源与署名
+- **Traceable**: a contribution should be able to state the category of its sources and material.
+- **Proportionate**: hard constraints apply only to sources that carry real risk; everything else is handled by disclosure and credit.
+- **Jurisdiction-neutral**: no contributor's jurisdiction is assumed. Statements below about legal rights are framed in terms of "protected expression".
 
-### 2.1 思想、方法不受保护
+## 2. Sources and attribution
 
-思想、方法、算法与发现不受著作权保护，也不产生归属：任何人都可以独立实现同一思路。不得以「我先想到」为由，阻止或贬低他人对同类检测的独立实现。
+### 2.1 Ideas and methods are not protected
 
-### 2.2 受版权保护的表达必须署名
+Ideas, methods, algorithms, and discoveries are not protected by copyright and create no ownership: anyone may independently implement the same approach. Being first to think of something does not justify blocking or disparaging another contributor's independent implementation of a comparable detector.
 
-引用、改编或移植他人受版权保护的**代码、文本或资源**时，必须：
+### 2.2 Protected expression must be attributed
 
-- 在来源处署名（在中文语境下即《中华人民共和国著作权法》第十条的**署名权**）；
-- 遵守其许可证；许可证与本仓库（Apache-2.0）不兼容的，不得引入（见 §3）。
+When you quote, adapt, or port another party's copyright-protected **code, text, or assets**, you must:
 
-### 2.3 致谢
+- attribute it at the source (in a Chinese-language context, the right of authorship under Article 10 of the Copyright Law of the People's Republic of China);
+- comply with its licence. Material whose licence is incompatible with this repository (Apache-2.0) must not be introduced (see §3).
 
-对「想法、发现、先例」的致谢是本项目**期待而非强制**。欢迎在 README、源码注释、`Co-authored-by` 等处注明；但不得以「未致谢」为由指控抄袭或要求撤下某贡献。
+### 2.3 Credit
 
-## 3. 禁止引入的来源（硬性）
+Crediting an idea, a discovery, or prior work is **expected, not required**. Noting it in the README, a source comment, or a `Co-authored-by` trailer is welcome; but missing credit must not be used to allege plagiarism or to demand that a contribution be withdrawn.
 
-不得将下列材料引入本仓库：
+## 3. Banned sources (hard rule)
 
-- 与本仓库 Apache-2.0 不兼容的许可代码，尤其是 **GPL 系**（KernelSU、Magisk、LSPosed 等均为 GPL-3.0）；
-- 泄露的源代码、受 NDA 约束的材料，以及违反适用许可或合同取得的材料。
+Do not introduce:
 
-对同一功能，应**描述行为、独立重写**，而不是复制代码。
+- code under a licence incompatible with this repository's Apache-2.0, in particular **GPL-family** code (KernelSU, Magisk, and LSPosed are all GPL-3.0);
+- leaked source code, material under NDA, or material obtained in violation of an applicable licence or contract.
 
-> 本仓库所检测的对象（含闭源隐藏模块）提供的是**功能事实**（时序特征、属性名等），不受著作权保护。本节的约束针对**代码与受保护文本的搬运**，不针对「是否阅读或观察过某个软件」。
+For the same functionality, **describe the behaviour and reimplement independently** rather than copying code.
 
-## 4. PR 中的来源披露
+> The subjects this repository inspects (including closed-source hiding modules) expose **functional facts** (timing signatures, property names, and so on), which are not protected by copyright. The constraint in this section targets the **porting of code and protected text**, not whether someone has read or observed a given program.
 
-在 PR 中说明改动的**知识来源类别**（**描述性，不作为接受门槛**）：
+## 4. Provenance disclosure in pull requests
 
-- 独立原发；
-- 公开权威文档（AOSP、ACK、Android 官方文档等）；
-- 对公开可获取产品的黑盒观察；
-- 对某软件的逆向（反编译 / 反汇编 / 动态分析）；
-- 来自第三方（上游、姊妹项目等）。
+In a PR, state the **category** of the change's knowledge source (**descriptive, not a gate**):
 
-并说明是否使用 AI 或代码生成工具。
+- original;
+- public authoritative documentation (AOSP, ACK, official Android docs, and so on);
+- black-box observation of a publicly available product;
+- reverse engineering of a program (decompilation / disassembly / dynamic analysis);
+- third party (upstream, sister project, and so on).
 
-## 5. AI 与工具署名
+Also state whether AI or code-generation tools were used.
 
-- AI 工具**不得**出现在 `Signed-off-by`（该 trailer 代表人的授权声明）；
-- 使用 AI 或代码生成工具时，用 `Co-authored-by:` 或 `Assisted-by: <model>` trailer 注明；
-- 沿用并规范现有惯例，例如 `Moew`、`This PR is made by …`、`Co-authored-by: <tool>`。
+## 5. AI and tooling attribution
 
-## 6. 本规范不含的内容
+- AI tools **must not** appear in `Signed-off-by` (that trailer is a person's authorisation statement);
+- when AI or code-generation tools are used, credit them with a `Co-authored-by:` or `Assisted-by: <model>` trailer;
+- keep and formalise the existing conventions, such as `Moew`, `This PR is made by …`, and `Co-authored-by: <tool>`.
 
-本规范只处理「来源与署名」，不引入 CLA、DCO 门禁或行为准则惩戒程序。若将来出现具体触发（如厂商投诉、许可纠纷或无法内部解决的冲突），再另行讨论。
+## 6. What this document does not cover
+
+This document addresses provenance and attribution only. It does not introduce a CLA, a DCO gate, or a code-of-conduct enforcement process. If a concrete trigger ever arises (for example a vendor complaint, a licensing dispute, or a conflict that cannot be resolved internally), that will be discussed separately.
